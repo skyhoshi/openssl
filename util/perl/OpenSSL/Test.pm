@@ -22,7 +22,7 @@ $VERSION = "1.0";
                                          srctop_dir srctop_file
                                          data_file data_dir
                                          result_file result_dir
-                                         pipe with cmdstr quotify
+                                         pipe with cmdstr
                                          openssl_versions
                                          ok_nofips is_nofips isnt_nofips));
 
@@ -69,6 +69,7 @@ use File::Spec::Functions qw/file_name_is_absolute curdir canonpath splitdir
 use File::Path 2.00 qw/rmtree mkpath/;
 use File::Basename;
 use Cwd qw/getcwd abs_path/;
+use OpenSSL::Util;
 
 my $level = 0;
 
@@ -315,7 +316,7 @@ sub cmd {
         my @cmdargs = ( @$cmd );
         my @prog = __wrap_cmd(shift @cmdargs, $opts{exe_shell} // ());
 
-        return __decorate_cmd($num, [ @prog, quotify(@cmdargs) ],
+        return __decorate_cmd($num, [ @prog, fixup_cmd_elements(@cmdargs) ],
                               %opts);
     }
 }
@@ -809,50 +810,6 @@ sub cmdstr {
 
 =over 4
 
-=item B<quotify LIST>
-
-LIST is a list of strings that are going to be used as arguments for a
-command, and makes sure to inject quotes and escapes as necessary depending
-on the content of each string.
-
-This can also be used to put quotes around the executable of a command.
-I<This must never ever be done on VMS.>
-
-=back
-
-=cut
-
-sub quotify {
-    # Unix setup (default if nothing else is mentioned)
-    my $arg_formatter =
-	sub { $_ = shift;
-	      ($_ eq '' || /\s|[\{\}\\\$\[\]\*\?\|\&:;<>]/) ? "'$_'" : $_ };
-
-    if ( $^O eq "VMS") {	# VMS setup
-	$arg_formatter = sub {
-	    $_ = shift;
-	    if ($_ eq '' || /\s|["[:upper:]]/) {
-		s/"/""/g;
-		'"'.$_.'"';
-	    } else {
-		$_;
-	    }
-	};
-    } elsif ( $^O eq "MSWin32") { # MSWin setup
-	$arg_formatter = sub {
-	    $_ = shift;
-	    if ($_ eq '' || /\s|["\|\&\*\;<>]/) {
-		s/(["\\])/\\$1/g;
-		'"'.$_.'"';
-	    } else {
-		$_;
-	    }
-	};
-    }
-
-    return map { $arg_formatter->($_) } @_;
-}
-
 =over 4
 
 =item B<openssl_versions>
@@ -995,6 +952,10 @@ sub __env {
     rmtree($directories{RESULTS}, { safe => 0, keep_root => 1 });
     mkpath($directories{RESULTS});
 
+    # All directories are assumed to exist, except for SRCDATA.  If that one
+    # doesn't exist, just drop it.
+    delete $directories{SRCDATA} unless -d $directories{SRCDATA};
+
     push @direnv, "TOP"       if $ENV{TOP};
     push @direnv, "SRCTOP"    if $ENV{SRCTOP};
     push @direnv, "BLDTOP"    if $ENV{BLDTOP};
@@ -1094,12 +1055,16 @@ sub __fuzz_file {
 sub __data_file {
     BAIL_OUT("Must run setup() first") if (! $test_name);
 
+    return undef unless exists $directories{SRCDATA};
+
     my $f = pop;
     return catfile($directories{SRCDATA},@_,$f);
 }
 
 sub __data_dir {
     BAIL_OUT("Must run setup() first") if (! $test_name);
+
+    return undef unless exists $directories{SRCDATA};
 
     return catdir($directories{SRCDATA},@_);
 }
@@ -1116,6 +1081,14 @@ sub __data_dir {
 sub __cwd {
     my $dir = catdir(shift);
     my %opts = @_;
+
+    # If the directory is to be created, we must do that before using
+    # abs_path().
+    $dir = canonpath($dir);
+    if ($opts{create}) {
+	mkpath($dir);
+    }
+
     my $abscurdir = abs_path(curdir());
     my $absdir = abs_path($dir);
     my $reverse = abs2rel($abscurdir, $absdir);
@@ -1135,11 +1108,6 @@ sub __cwd {
     # In this case, we won't even clean it out, for safety's sake.
     return "." if $reverse eq "";
 
-    $dir = canonpath($dir);
-    if ($opts{create}) {
-	mkpath($dir);
-    }
-
     # We are recalculating the directories we keep track of, but need to save
     # away the result for after having moved into the new directory.
     my %tmp_directories = ();
@@ -1152,11 +1120,10 @@ sub __cwd {
     foreach (@dirtags) {
 	if (!file_name_is_absolute($directories{$_})) {
 	    my $oldpath = abs_path($directories{$_});
-	    my $newbase = abs_path($dir);
-	    my $newpath = abs2rel($oldpath, $newbase);
+	    my $newpath = abs2rel($oldpath, $absdir);
 	    if ($debug) {
 		print STDERR "DEBUG: [dir $_] old path: $oldpath\n";
-		print STDERR "DEBUG: [dir $_] new base: $newbase\n";
+		print STDERR "DEBUG: [dir $_] new base: $absdir\n";
 		print STDERR "DEBUG: [dir $_] resulting new path: $newpath\n";
 	    }
 	    $tmp_directories{$_} = $newpath;
@@ -1169,11 +1136,10 @@ sub __cwd {
     foreach (@direnv) {
 	if (!file_name_is_absolute($ENV{$_})) {
 	    my $oldpath = abs_path($ENV{$_});
-	    my $newbase = abs_path($dir);
-	    my $newpath = abs2rel($oldpath, $newbase);
+	    my $newpath = abs2rel($oldpath, $absdir);
 	    if ($debug) {
 		print STDERR "DEBUG: [env $_] old path: $oldpath\n";
-		print STDERR "DEBUG: [env $_] new base: $newbase\n";
+		print STDERR "DEBUG: [env $_] new base: $absdir\n";
 		print STDERR "DEBUG: [env $_] resulting new path: $newpath\n";
 	    }
 	    $tmp_ENV{$_} = $newpath;
@@ -1200,7 +1166,8 @@ sub __cwd {
 	print STDERR "\n";
 	print STDERR "	\$directories{BLDTEST} = \"$directories{BLDTEST}\"\n";
 	print STDERR "	\$directories{SRCTEST} = \"$directories{SRCTEST}\"\n";
-	print STDERR "	\$directories{SRCDATA} = \"$directories{SRCDATA}\"\n";
+	print STDERR "	\$directories{SRCDATA} = \"$directories{SRCDATA}\"\n"
+            if exists $directories{SRCDATA};
 	print STDERR "	\$directories{RESULTS} = \"$directories{RESULTS}\"\n";
 	print STDERR "	\$directories{BLDAPPS} = \"$directories{BLDAPPS}\"\n";
 	print STDERR "	\$directories{SRCAPPS} = \"$directories{SRCAPPS}\"\n";
@@ -1237,16 +1204,11 @@ sub __wrap_cmd {
         # Otherwise, use the standard wrapper
         my $std_wrapper = __bldtop_file("util", "wrap.pl");
 
-        if ($^O eq "VMS") {
-            # On VMS, running random executables without having a command
-            # symbol means running them with the MCR command.  This is an
-            # old PDP-11 command that stuck around.  So we get a command
-            # running perl running the script.
-            @prefix = ( "MCR", $^X, $std_wrapper );
-        } elsif ($^O eq "MSWin32") {
-            # In the Windows case, we run perl explicitly.  We might not
-            # need it, but that depends on if the user has associated the
-            # '.pl' extension with a perl interpreter, so better be safe.
+        if ($^O eq "VMS" || $^O eq "MSWin32") {
+            # On VMS and Windows, we run the perl executable explicitly,
+            # with necessary fixups.  We might not need that for Windows,
+            # but that depends on if the user has associated the '.pl'
+            # extension with a perl interpreter, so better be safe.
             @prefix = ( __fixup_prg($^X), $std_wrapper );
         } else {
             # Otherwise, we assume Unix semantics, and trust that the #!
@@ -1267,23 +1229,7 @@ sub __wrap_cmd {
 sub __fixup_prg {
     my $prog = shift;
 
-    my $prefix = "";
-
-    if ($^O eq "VMS" ) {
-	$prefix = ($prog =~ /^(?:[\$a-z0-9_]+:)?[<\[]/i ? "mcr " : "mcr []");
-    }
-
-    if (defined($prog)) {
-	# Make sure to quotify the program file on platforms that may
-	# have spaces or similar in their path name.
-	# To our knowledge, VMS is the exception where quotifying should
-	# never happen.
-	($prog) = quotify($prog) unless $^O eq "VMS";
-	return $prefix.$prog;
-    }
-
-    print STDERR "$prog not found\n";
-    return undef;
+    return join(' ', fixup_cmd($prog));
 }
 
 # __decorate_cmd NUM, CMDARRAYREF
