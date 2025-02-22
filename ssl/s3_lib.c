@@ -21,6 +21,7 @@
 #include <openssl/x509v3.h>
 #include <openssl/core_names.h>
 #include "internal/cryptlib.h"
+#include "internal/ssl_unwrap.h"
 
 #define TLS13_NUM_CIPHERS       OSSL_NELEM(tls13_ciphers)
 #define SSL3_NUM_CIPHERS        OSSL_NELEM(ssl3_ciphers)
@@ -3779,7 +3780,7 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
             if (SSL_CONNECTION_IS_TLS13(sc) && sc->s3.did_kex)
                 id = sc->s3.group_id;
             else
-                id = sc->session->kex_group;
+                id = (sc->session != NULL) ? sc->session->kex_group : NID_undef;
             ret = tls1_group_id2nid(id, 1);
             break;
         }
@@ -3825,10 +3826,22 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
     case SSL_CTRL_GET_CHAIN_CERT_STORE:
         return ssl_cert_get_cert_store(sc->cert, parg, 1);
 
+    case SSL_CTRL_GET_PEER_SIGNATURE_NAME:
+        if (parg == NULL || sc->s3.tmp.peer_sigalg == NULL)
+            return 0;
+        *(const char **)parg = sc->s3.tmp.peer_sigalg->name;
+        return 1;
+
     case SSL_CTRL_GET_PEER_SIGNATURE_NID:
         if (sc->s3.tmp.peer_sigalg == NULL)
             return 0;
         *(int *)parg = sc->s3.tmp.peer_sigalg->hash;
+        return 1;
+
+    case SSL_CTRL_GET_SIGNATURE_NAME:
+        if (parg == NULL || sc->s3.tmp.sigalg == NULL)
+            return 0;
+        *(const char **)parg = sc->s3.tmp.sigalg->name;
         return 1;
 
     case SSL_CTRL_GET_SIGNATURE_NID:
@@ -3841,7 +3854,9 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
         if (sc->session == NULL || sc->s3.peer_tmp == NULL) {
             return 0;
         } else {
-            EVP_PKEY_up_ref(sc->s3.peer_tmp);
+            if (!EVP_PKEY_up_ref(sc->s3.peer_tmp))
+                return 0;
+
             *(EVP_PKEY **)parg = sc->s3.peer_tmp;
             return 1;
         }
@@ -3850,7 +3865,9 @@ long ssl3_ctrl(SSL *s, int cmd, long larg, void *parg)
         if (sc->session == NULL || sc->s3.tmp.pkey == NULL) {
             return 0;
         } else {
-            EVP_PKEY_up_ref(sc->s3.tmp.pkey);
+            if (!EVP_PKEY_up_ref(sc->s3.tmp.pkey))
+                return 0;
+
             *(EVP_PKEY **)parg = sc->s3.tmp.pkey;
             return 1;
         }

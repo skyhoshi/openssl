@@ -30,17 +30,36 @@ OpenSSL 3.5
 
 ### Changes between 3.4 and 3.5 [xx XXX xxxx]
 
+* Added new API to enable 0-RTT for 3rd party QUIC stacks.
+
+  *Cheng Zhang*
+
+* Added support for a new callback registration SSL_CTX_set_new_pending_conn_cb,
+  which allows for application notification of new connection SSL object
+  creation, which occurs independently of calls to SSL_accept_connection().
+  Note: QUIC objects passed through SSL callbacks should not have their state
+  mutated via calls back into the SSL api until such time as they have been
+  received via a call to SSL_accept_connection().
+
+  *Neil Horman*
+
+* Add SLH-DSA as specified in FIPS 205.
+
+  *Shane Lontis and Dr Paul Dale*
+
 * ML-KEM as specified in FIPS 203.
 
   Based on the original implementation in BoringSSL, ported from C++ to C,
   refactored, and integrated into the OpenSSL default and FIPS providers.
   Including also the X25519MLKEM768, SecP256r1MLKEM768, SecP384r1MLKEM1024
   TLS hybrid key post-quantum/classical key agreement schemes.
+
   *Michael Baentsch, Viktor Dukhovni, Shane Lontis and Paul Dale*
 
 * Add ML-DSA as specified in FIPS 204.
 
   The base code was derived from BoringSSL C++ code.
+
   *Shane Lontis, Viktor Dukhovni and Paul Dale*
 
  * Added new API calls to enable 3rd party QUIC stacks to use the OpenSSL TLS
@@ -55,6 +74,11 @@ OpenSSL 3.5
    an implementation, as done previously, if needed.
 
    *Simo Sorce*
+
+ * Initial support for opaque symmetric keys objects.  These replace the ad-hoc byte
+   arrays that are pervasive throughout the library.
+
+   *Dmitry Belyavskiy and Simo Sorce*
 
  * For TLSv1.3: Add capability for a client to send multiple key shares. Extend the scope of
    `SSL_OP_CIPHER_SERVER_PREFERENCE` to cover server-side key exchange group selection.
@@ -77,14 +101,14 @@ OpenSSL 3.5
 
    *Viktor Dukhovni*
 
- * All the BIO_meth_get_*() functions allowing reuse of the internal OpenSSL
+ * All the `BIO_meth_get_*()` functions allowing reuse of the internal OpenSSL
    BIO method implementations were deprecated. The reuse is unsafe due to
    dependency on the code of the internal methods not changing.
 
    *Tomáš Mráz*
 
- * Support DEFAULT keyword and '-' prefix in SSL_CTX_set1_groups_list().
-   SSL_CTX_set1_groups_list() now supports the DEFAULT keyword which sets the
+ * Support DEFAULT keyword and '-' prefix in `SSL_CTX_set1_groups_list()`.
+   `SSL_CTX_set1_groups_list()` now supports the DEFAULT keyword which sets the
    available groups to the default selection. The '-' prefix allows the calling
    application to remove a group from the selection.
 
@@ -98,7 +122,7 @@ OpenSSL 3.5
    *Aditya*
 
  * Enhanced PKCS#7 inner contents verification.
-   In the PKCS7_verify() function, the BIO *indata parameter refers to the
+   In the `PKCS7_verify()` function, the BIO *indata parameter refers to the
    signed data if the content is detached from p7. Otherwise, indata should be
    NULL, and then the signed data must be in p7.
 

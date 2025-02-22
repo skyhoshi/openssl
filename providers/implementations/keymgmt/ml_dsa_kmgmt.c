@@ -14,10 +14,12 @@
 #include <openssl/proverr.h>
 #include <openssl/self_test.h>
 #include "crypto/ml_dsa.h"
+#include "internal/fips.h"
 #include "internal/param_build_set.h"
 #include "prov/implementations.h"
 #include "prov/providercommon.h"
 #include "prov/provider_ctx.h"
+#include "prov/ml_dsa.h"
 
 static OSSL_FUNC_keymgmt_free_fn ml_dsa_free_key;
 static OSSL_FUNC_keymgmt_has_fn ml_dsa_has;
@@ -58,7 +60,8 @@ static int ml_dsa_pairwise_test(const ML_DSA_KEY *key)
     size_t sig_len = 0;
     int ret = 0;
 
-    if (!ml_dsa_has(key, OSSL_KEYMGMT_SELECT_KEYPAIR))
+    if (!ml_dsa_has(key, OSSL_KEYMGMT_SELECT_KEYPAIR)
+            || ossl_fips_self_testing())
         return 1;
 
     /*
@@ -93,22 +96,36 @@ static int ml_dsa_pairwise_test(const ML_DSA_KEY *key)
 }
 #endif
 
-static void *ml_dsa_new_key(void *provctx, const char *propq,
-                            int evp_type)
+ML_DSA_KEY *ossl_prov_ml_dsa_new(PROV_CTX *ctx, const char *propq, int evp_type)
 {
     ML_DSA_KEY *key;
-    int prefer, retain;
 
     if (!ossl_prov_is_running())
         return 0;
 
-    key = ossl_ml_dsa_key_new(PROV_LIBCTX_OF(provctx), propq, evp_type);
+    key = ossl_ml_dsa_key_new(PROV_LIBCTX_OF(ctx), propq, evp_type);
+    /*
+     * When decoding, if the key ends up "loaded" into the same provider, these
+     * are the correct config settings, otherwise, new values will be assigned
+     * on import into a different provider.  The "load" API does not pass along
+     * the provider context.
+     */
     if (key != NULL) {
-        prefer = ossl_prov_ctx_get_bool_param(
-            provctx, OSSL_PKEY_PARAM_ML_DSA_PREFER_SEED, 1);
-        retain = ossl_prov_ctx_get_bool_param(
-            provctx, OSSL_PKEY_PARAM_ML_DSA_RETAIN_SEED, 1);
-        ossl_ml_dsa_set_prekey(key, prefer, retain, NULL, 0, NULL, 0);
+        int flags_set = 0, flags_clr = 0;
+
+        if (ossl_prov_ctx_get_bool_param(
+                ctx, OSSL_PKEY_PARAM_ML_DSA_RETAIN_SEED, 1))
+            flags_set |= ML_DSA_KEY_RETAIN_SEED;
+        else
+            flags_clr = ML_DSA_KEY_RETAIN_SEED;
+
+        if (ossl_prov_ctx_get_bool_param(
+                ctx, OSSL_PKEY_PARAM_ML_DSA_PREFER_SEED, 1))
+            flags_set |= ML_DSA_KEY_PREFER_SEED;
+        else
+            flags_clr |= ML_DSA_KEY_PREFER_SEED;
+
+        ossl_ml_dsa_set_prekey(key, flags_set, flags_clr, NULL, 0, NULL, 0);
     }
     return key;
 }
@@ -217,8 +234,9 @@ static int ml_dsa_key_fromdata(ML_DSA_KEY *key, const OSSL_PARAM params[],
     }
 
     if (seed_len != 0
-        && (sk_len == 0 || ossl_ml_dsa_key_prefer_seed(key))) {
-        if (!ossl_ml_dsa_set_prekey(key, -1, -1, seed, seed_len, NULL, 0))
+        && (sk_len == 0
+            || (ossl_ml_dsa_key_get_prov_flags(key) & ML_DSA_KEY_PREFER_SEED))) {
+        if (!ossl_ml_dsa_set_prekey(key, 0, 0, seed, seed_len, NULL, 0))
             return 0;
         if (!ossl_ml_dsa_generate_key(key)) {
             ERR_raise(ERR_LIB_PROV, PROV_R_FAILED_TO_GENERATE_KEY);
@@ -242,7 +260,6 @@ static int ml_dsa_import(void *keydata, int selection, const OSSL_PARAM params[]
 {
     ML_DSA_KEY *key = keydata;
     int include_priv;
-    int res;
 
     if (!ossl_prov_is_running() || key == NULL)
         return 0;
@@ -251,17 +268,7 @@ static int ml_dsa_import(void *keydata, int selection, const OSSL_PARAM params[]
         return 0;
 
     include_priv = ((selection & OSSL_KEYMGMT_SELECT_PRIVATE_KEY) != 0);
-    res = ml_dsa_key_fromdata(key, params, include_priv);
-#ifdef FIPS_MODULE
-    if (res > 0) {
-        res = ml_dsa_pairwise_test(key);
-        if (res <= 0) {
-            ossl_ml_dsa_key_reset(key);
-            ossl_set_error_state(OSSL_SELF_TEST_TYPE_PCT);
-        }
-    }
-#endif
-    return res;
+    return ml_dsa_key_fromdata(key, params, include_priv);
 }
 
 #define ML_DSA_IMEXPORTABLE_PARAMETERS \
@@ -384,7 +391,8 @@ static int ml_dsa_export(void *keydata, int selection,
 #ifndef FIPS_MODULE
 static void *ml_dsa_load(const void *reference, size_t reference_sz)
 {
-    ML_DSA_KEY *ret = NULL, *key = NULL;
+    ML_DSA_KEY *key = NULL;
+    const ML_DSA_PARAMS *key_params;
     const uint8_t *sk, *seed;
 
     if (ossl_prov_is_running() && reference_sz == sizeof(key)) {
@@ -399,18 +407,25 @@ static void *ml_dsa_load(const void *reference, size_t reference_sz)
         sk = ossl_ml_dsa_key_get_priv(key);
         seed = ossl_ml_dsa_key_get_seed(key);
         if (seed != NULL
-            && (sk == NULL || ossl_ml_dsa_key_prefer_seed(key))) {
+            && (sk == NULL || (ossl_ml_dsa_key_get_prov_flags(key)
+                               & ML_DSA_KEY_PREFER_SEED))) {
             if (ossl_ml_dsa_generate_key(key))
-                ret = key;
+                return key;
         } else if (sk != NULL) {
             if (ossl_ml_dsa_sk_decode(key, sk,
                                       ossl_ml_dsa_key_get_priv_len(key)))
-                ret = key;
+                return key;
+            key_params = ossl_ml_dsa_key_params(key);
+            ERR_raise_data(ERR_LIB_PROV, PROV_R_INVALID_KEY,
+                           "error parsing %s private key",
+                           key_params->alg);
+        } else {
+            return key;
         }
     }
-    if (ret == NULL)
-        ossl_ml_dsa_key_free(key);
-    return ret;
+
+    ossl_ml_dsa_key_free(key);
+    return NULL;
 }
 #endif
 
@@ -439,11 +454,11 @@ static void *ml_dsa_gen(void *genctx, int evp_type)
 
     if (!ossl_prov_is_running())
         return NULL;
-    key = ml_dsa_new_key(gctx->provctx, gctx->propq, evp_type);
+    key = ossl_prov_ml_dsa_new(gctx->provctx, gctx->propq, evp_type);
     if (key == NULL)
         return NULL;
     if (gctx->entropy_len != 0
-        && !ossl_ml_dsa_set_prekey(key, -1, -1,
+        && !ossl_ml_dsa_set_prekey(key, 0, 0,
                                    gctx->entropy, gctx->entropy_len, NULL, 0))
         goto err;
     if (!ossl_ml_dsa_generate_key(key)) {
@@ -521,7 +536,7 @@ static void ml_dsa_gen_cleanup(void *genctx)
     static OSSL_FUNC_keymgmt_gen_fn ml_dsa_##alg##_gen;                        \
     static void *ml_dsa_##alg##_new_key(void *provctx)                         \
     {                                                                          \
-        return ml_dsa_new_key(provctx, NULL, EVP_PKEY_ML_DSA_##alg);           \
+        return ossl_prov_ml_dsa_new(provctx, NULL, EVP_PKEY_ML_DSA_##alg);     \
     }                                                                          \
     static void *ml_dsa_##alg##_gen(void *genctx, OSSL_CALLBACK *osslcb, void *cbarg)\
     {                                                                          \
