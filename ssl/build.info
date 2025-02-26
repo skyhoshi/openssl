@@ -29,4 +29,10 @@ ENDIF
 
 IF[{- !$disabled{quic} -}]
   SOURCE[../libssl]=priority_queue.c
+  SHARED_SOURCE[../libssl] = ../crypto/hashtable/hashfunc.c
+  IF[{- $disabled{siphash} -}]
+    SOURCE[../libssl]=../crypto/siphash/siphash.c
+  ELSE
+    SHARED_SOURCE[../libssl]=../crypto/siphash/siphash.c
+  ENDIF
 ENDIF
