@@ -11,6 +11,7 @@
 #include "../ssl_local.h"
 #include "statem_local.h"
 #include "internal/cryptlib.h"
+#include "internal/ssl_unwrap.h"
 
 #define COOKIE_STATE_FORMAT_VERSION     1
 
@@ -684,13 +685,20 @@ static KS_EXTRACTION_RESULT extract_keyshares(SSL_CONNECTION *s, PACKET *key_sha
 
         /*
          * Check if this share is in supported_groups sent from client
-         * and that the key shares are in the same sequence as the supported_groups
+         * RFC 8446 also mandates that clients send keyshares in the same
+         * order as listed in the supported groups extension, but its not
+         * required that the server check that, and some clients violate this
+         * so instead of failing the connection when that occurs, log a trace
+         * message indicating the client discrepancy.
          */
-        if (!check_in_list(s, group_id, clntgroups, clnt_num_groups, 0, &key_share_pos)
-                || key_share_pos < previous_key_share_pos) {
+        if (!check_in_list(s, group_id, clntgroups, clnt_num_groups, 0, &key_share_pos)) {
             SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_BAD_KEY_SHARE);
             goto failure;
         }
+
+        if (key_share_pos < previous_key_share_pos)
+            OSSL_TRACE1(TLS, "key share group id %d is out of RFC 8446 order\n", group_id);
+
         previous_key_share_pos = key_share_pos;
 
         if (s->s3.group_id != 0) {

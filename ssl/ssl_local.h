@@ -37,6 +37,7 @@
 # include "internal/time.h"
 # include "internal/ssl.h"
 # include "internal/cryptlib.h"
+# include "internal/quic_predef.h"
 # include "record/record.h"
 # include "internal/quic_predef.h"
 # include "internal/quic_tls.h"
@@ -310,6 +311,9 @@
 # define SSL_WRITE_ETM(s) (s->s3.flags & TLS1_FLAGS_ENCRYPT_THEN_MAC_WRITE)
 
 # define SSL_IS_QUIC_HANDSHAKE(s) (((s)->s3.flags & TLS1_FLAGS_QUIC) != 0)
+
+/* no end of early data */
+# define SSL_NO_EOED(s) SSL_IS_QUIC_HANDSHAKE(s)
 
 /* alert_dispatch values */
 
@@ -988,6 +992,10 @@ struct ssl_ctx_st {
     SSL_client_hello_cb_fn client_hello_cb;
     void *client_hello_cb_arg;
 
+    /* Callback to announce new pending ssl objects in the accept queue */
+    SSL_new_pending_conn_cb_fn new_pending_conn_cb;
+    void *new_pending_conn_arg;
+
     /* TLS extensions. */
     struct {
         /* TLS extensions servername callback */
@@ -1029,8 +1037,6 @@ struct ssl_ctx_st {
         size_t tuples_len; /* Number of group tuples */
         size_t *tuples; /* Number of groups in each group tuple */
 
-        uint16_t *supported_groups_default;
-        size_t supported_groups_default_len;
         /*
          * ALPN information (we are in the process of transitioning from NPN to
          * ALPN.)
@@ -1194,6 +1200,11 @@ struct ssl_ctx_st {
     unsigned char *server_cert_type;
     size_t server_cert_type_len;
 
+# ifndef OPENSSL_NO_QUIC
+    uint64_t domain_flags;
+    SSL_TOKEN_STORE *tokencache;
+# endif
+
 # ifndef OPENSSL_NO_QLOG
     char *qlog_title; /* Session title for qlog */
 # endif
@@ -1216,9 +1227,13 @@ typedef struct ossl_quic_tls_callbacks_st {
 
 typedef struct cert_pkey_st CERT_PKEY;
 
-#define SSL_TYPE_SSL_CONNECTION  0
-#define SSL_TYPE_QUIC_CONNECTION 1
-#define SSL_TYPE_QUIC_XSO        2
+#define SSL_TYPE_SSL_CONNECTION     0
+#define SSL_TYPE_QUIC_CONNECTION    0x80
+#define SSL_TYPE_QUIC_XSO           0x81
+#define SSL_TYPE_QUIC_LISTENER      0x82
+#define SSL_TYPE_QUIC_DOMAIN        0x83
+
+#define SSL_TYPE_IS_QUIC(x)         (((x) & 0x80) != 0)
 
 struct ssl_st {
     int type;
@@ -1852,39 +1867,6 @@ struct ssl_connection_st {
     unsigned char *server_cert_type;
     size_t server_cert_type_len;
 };
-
-# define SSL_CONNECTION_FROM_SSL_ONLY_int(ssl, c) \
-    ((ssl) == NULL ? NULL                         \
-     : ((ssl)->type == SSL_TYPE_SSL_CONNECTION    \
-       ? (c SSL_CONNECTION *)(ssl)                \
-       : NULL))
-# define SSL_CONNECTION_NO_CONST
-# define SSL_CONNECTION_FROM_SSL_ONLY(ssl) \
-    SSL_CONNECTION_FROM_SSL_ONLY_int(ssl, SSL_CONNECTION_NO_CONST)
-# define SSL_CONNECTION_FROM_CONST_SSL_ONLY(ssl) \
-    SSL_CONNECTION_FROM_SSL_ONLY_int(ssl, const)
-# define SSL_CONNECTION_GET_CTX(sc) ((sc)->ssl.ctx)
-# define SSL_CONNECTION_GET_SSL(sc) (&(sc)->ssl)
-# define SSL_CONNECTION_GET_USER_SSL(sc) ((sc)->user_ssl)
-# ifndef OPENSSL_NO_QUIC
-#  include "quic/quic_local.h"
-#  define SSL_CONNECTION_FROM_SSL_int(ssl, c)                      \
-    ((ssl) == NULL ? NULL                                          \
-     : ((ssl)->type == SSL_TYPE_SSL_CONNECTION                     \
-        ? (c SSL_CONNECTION *)(ssl)                                \
-        : ((ssl)->type == SSL_TYPE_QUIC_CONNECTION                 \
-           ? (c SSL_CONNECTION *)((c QUIC_CONNECTION *)(ssl))->tls \
-           : NULL)))
-#  define SSL_CONNECTION_FROM_SSL(ssl) \
-    SSL_CONNECTION_FROM_SSL_int(ssl, SSL_CONNECTION_NO_CONST)
-#  define SSL_CONNECTION_FROM_CONST_SSL(ssl) \
-    SSL_CONNECTION_FROM_SSL_int(ssl, const)
-# else
-#  define SSL_CONNECTION_FROM_SSL(ssl) \
-    SSL_CONNECTION_FROM_SSL_ONLY_int(ssl, SSL_CONNECTION_NO_CONST)
-#  define SSL_CONNECTION_FROM_CONST_SSL(ssl) \
-    SSL_CONNECTION_FROM_SSL_ONLY_int(ssl, const)
-# endif
 
 /*
  * Structure containing table entry of values associated with the signature
@@ -2932,6 +2914,9 @@ int ssl_get_md_idx(int md_nid);
 __owur const EVP_MD *ssl_handshake_md(SSL_CONNECTION *s);
 __owur const EVP_MD *ssl_prf_md(SSL_CONNECTION *s);
 
+__owur int ossl_adjust_domain_flags(uint64_t domain_flags,
+                                    uint64_t *p_domain_flags);
+
 /*
  * ssl_log_rsa_client_key_exchange logs |premaster| to the SSL_CTX associated
  * with |ssl|, if logging is enabled. It returns one on success and zero on
@@ -3149,5 +3134,13 @@ long ossl_ctrl_internal(SSL *s, int cmd, long larg, void *parg, int no_quic);
 #define OSSL_QUIC_PERMITTED_OPTIONS             \
     (OSSL_QUIC_PERMITTED_OPTIONS_CONN |         \
      OSSL_QUIC_PERMITTED_OPTIONS_STREAM)
+
+/* Total mask of domain flags supported on a QUIC SSL_CTX. */
+#define OSSL_QUIC_SUPPORTED_DOMAIN_FLAGS        \
+    (SSL_DOMAIN_FLAG_SINGLE_THREAD |            \
+     SSL_DOMAIN_FLAG_MULTI_THREAD |             \
+     SSL_DOMAIN_FLAG_THREAD_ASSISTED |          \
+     SSL_DOMAIN_FLAG_BLOCKING |                 \
+     SSL_DOMAIN_FLAG_LEGACY_BLOCKING)
 
 #endif

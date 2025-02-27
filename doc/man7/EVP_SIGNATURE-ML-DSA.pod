@@ -59,7 +59,7 @@ The message encoding steps are defined in
 L<FIPS 204|https://csrc.nist.gov/pubs/fips/204/final> Algorithm 2 step 10 and
 Algorithm 3 step 5.
 
-=item "test-entropy" (B<OSSL_SIGNATURE_PARAM_TEST_ENTROPY <octet string>
+=item "test-entropy" (B<OSSL_SIGNATURE_PARAM_TEST_ENTROPY>) <octet string>
 
 Used for testing to pass an optional deterministic per message random value.
 If set the size must be 32 bytes.
@@ -100,7 +100,7 @@ To sign a message using an ML-DSA EVP_PKEY structure:
         size_t sig_len;
         unsigned char *sig = NULL;
         const OSSL_PARAM params[] = {
-            OSSL_PARAM_octet_string("context-string", (unsigned char *)"A context string", 33),
+            OSSL_PARAM_octet_string("context-string", (unsigned char *)"A context string", 16),
             OSSL_PARAM_END
         };
         EVP_PKEY_CTX *sctx = EVP_PKEY_CTX_new_from_pkey(NULL, pkey, NULL);
