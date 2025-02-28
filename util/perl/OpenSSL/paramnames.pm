@@ -80,6 +80,7 @@ my %params = (
     'OBJECT_PARAM_REFERENCE' =>         "reference",# OCTET_STRING
     'OBJECT_PARAM_DATA' =>              "data",# OCTET_STRING or UTF8_STRING
     'OBJECT_PARAM_DESC' =>              "desc",     # UTF8_STRING
+    'OBJECT_PARAM_INPUT_TYPE' =>        "input-type", # UTF8_STRING
 
 # Algorithm parameters
 # If "engine",or "properties",are specified, they should always be paired
@@ -423,6 +424,7 @@ my %params = (
     'PKEY_PARAM_ML_KEM_RETAIN_SEED' => "ml-kem.retain_seed",
     'PKEY_PARAM_ML_KEM_INPUT_FORMATS' => "ml-kem.input_formats",
     'PKEY_PARAM_ML_KEM_OUTPUT_FORMATS' => "ml-kem.output_formats",
+    'PKEY_PARAM_ML_KEM_IMPORT_PCT_TYPE' => "ml-kem.import_pct_type",
 
 # Key generation parameters
     'PKEY_PARAM_FFC_TYPE' =>         "type",
@@ -444,6 +446,9 @@ my %params = (
     'PKEY_PARAM_ML_DSA_PREFER_SEED' =>      "ml-dsa.prefer_seed",
     'PKEY_PARAM_ML_DSA_INPUT_FORMATS' =>    "ml-dsa.input_formats",
     'PKEY_PARAM_ML_DSA_OUTPUT_FORMATS' =>   "ml-dsa.output_formats",
+
+# SLH_DSA Key generation parameters
+    'PKEY_PARAM_SLH_DSA_SEED' =>              "seed",
 
 # Key Exchange parameters
     'EXCHANGE_PARAM_PAD' =>                   "pad",# uint
@@ -484,6 +489,7 @@ my %params = (
     'SIGNATURE_PARAM_DETERMINISTIC' =>      "deterministic",
     'SIGNATURE_PARAM_MU' =>                 "mu", # int
     'SIGNATURE_PARAM_TEST_ENTROPY' =>       "test-entropy",
+    'SIGNATURE_PARAM_ADD_RANDOM' =>         "additional-random",
 
 # Asym cipher parameters
     'ASYM_CIPHER_PARAM_DIGEST' =>                   '*PKEY_PARAM_DIGEST',
@@ -609,6 +615,10 @@ my %params = (
     'LIBSSL_RECORD_LAYER_PARAM_MAX_EARLY_DATA' => "max_early_data",
     'LIBSSL_RECORD_LAYER_PARAM_BLOCK_PADDING' =>  "block_padding",
     'LIBSSL_RECORD_LAYER_PARAM_HS_PADDING' =>     "hs_padding",
+
+# Symmetric Key parametes
+    'SKEY_PARAM_RAW_BYTES' => "raw-bytes",
+    'SKEY_PARAM_KEY_LENGTH' => "key-length",
 );
 
 # Generate string based macros for public consumption
