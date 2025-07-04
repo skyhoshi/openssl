@@ -656,7 +656,7 @@ int tls_collect_extensions(SSL_CONNECTION *s, PACKET *packet,
             SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_R_BAD_EXTENSION);
             goto err;
         }
-        idx = thisex - raw_extensions;
+        idx = (unsigned int)(thisex - raw_extensions);
         /*-
          * Check that we requested this extension (if appropriate). Requests can
          * be sent in the ClientHello and CertificateRequest. Unsolicited
@@ -696,7 +696,7 @@ int tls_collect_extensions(SSL_CONNECTION *s, PACKET *packet,
             if (s->ext.debug_cb)
                 s->ext.debug_cb(SSL_CONNECTION_GET_USER_SSL(s), !s->server,
                                 thisex->type, PACKET_data(&thisex->data),
-                                PACKET_remaining(&thisex->data),
+                                (int)PACKET_remaining(&thisex->data),
                                 s->ext.debug_arg);
         }
     }
@@ -1899,6 +1899,10 @@ int tls_parse_compress_certificate(SSL_CONNECTION *sc, PACKET *pkt, unsigned int
             sc->ext.compress_certificate_from_peer[j++] = comp;
             already_set[comp] = 1;
         }
+    }
+    if (PACKET_remaining(&supported_comp_algs) != 0) {
+        SSLfatal(sc, SSL_AD_DECODE_ERROR, SSL_R_BAD_EXTENSION);
+        return 0;
     }
 #endif
     return 1;

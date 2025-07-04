@@ -33,6 +33,11 @@
 #include "internal/ssl_unwrap.h"
 #include "quic/quic_local.h"
 
+#ifndef OPENSSL_NO_SSLKEYLOG
+# include <sys/stat.h>
+# include <fcntl.h>
+#endif
+
 static int ssl_undefined_function_3(SSL_CONNECTION *sc, unsigned char *r,
                                     unsigned char *s, size_t t, size_t *u)
 {
@@ -651,6 +656,8 @@ int ossl_ssl_connection_reset(SSL *s)
         if (!s->method->ssl_clear(s))
             return 0;
     }
+
+    ossl_quic_tls_clear(sc->qtls);
 
     if (!RECORD_LAYER_reset(&sc->rlayer))
         return 0;
@@ -3461,7 +3468,7 @@ char *SSL_get_shared_ciphers(const SSL *s, char *buf, int size)
         if (sk_SSL_CIPHER_find(srvrsk, c) < 0)
             continue;
 
-        n = OPENSSL_strnlen(c->name, size);
+        n = (int)OPENSSL_strnlen(c->name, size);
         if (n >= size) {
             if (p != buf)
                 --p;
@@ -3981,6 +3988,33 @@ static void do_sslkeylogfile(const SSL *ssl, const char *line)
  * via ssl.h.
  */
 
+#ifndef OPENSSL_NO_SSLKEYLOG
+static BIO *get_sslkeylog_bio(const char *keylogfile)
+{
+# ifdef _POSIX_C_SOURCE
+    BIO *b;
+    int fdno = -1;
+    FILE *fp = NULL;
+
+    fdno = open(keylogfile, O_WRONLY | O_CREAT | O_APPEND,  0600);
+    if (fdno < 0)
+        return NULL;
+
+    fp = fdopen(fdno, "a");
+    if (fp == NULL) {
+        close(fdno);
+        return NULL;
+    }
+
+    if ((b = BIO_new_fp(fp, BIO_CLOSE)) == NULL)
+        fclose(fp);
+    return b;
+# else
+    return BIO_new_file(keylogfile, "a");
+# endif
+}
+#endif
+
 SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
                         const SSL_METHOD *meth)
 {
@@ -4293,7 +4327,7 @@ SSL_CTX *SSL_CTX_new_ex(OSSL_LIB_CTX *libctx, const char *propq,
              * if its already there.
              */
             if (keylog_bio == NULL) {
-                keylog_bio = BIO_new_file(keylogfile, "a");
+                keylog_bio = get_sslkeylog_bio(keylogfile);
                 if (keylog_bio == NULL) {
                     OSSL_TRACE(TLS, "Unable to create keylog bio\n");
                     goto out;
@@ -5473,6 +5507,8 @@ SSL_CTX *SSL_set_SSL_CTX(SSL *ssl, SSL_CTX *ctx)
         ctx = sc->session_ctx;
     new_cert = ssl_cert_dup(ctx->cert);
     if (new_cert == NULL)
+        goto err;
+    if (!custom_exts_copy_conn(&new_cert->custext, &sc->cert->custext))
         goto err;
     if (!custom_exts_copy_flags(&new_cert->custext, &sc->cert->custext))
         goto err;
@@ -7292,7 +7328,7 @@ __owur unsigned int ssl_get_max_send_fragment(const SSL_CONNECTION *sc)
         return GET_MAX_FRAGMENT_LENGTH(sc->session);
 
     /* return current SSL connection setting */
-    return sc->max_send_fragment;
+    return (unsigned int)sc->max_send_fragment;
 }
 
 __owur unsigned int ssl_get_split_send_fragment(const SSL_CONNECTION *sc)
@@ -7304,10 +7340,10 @@ __owur unsigned int ssl_get_split_send_fragment(const SSL_CONNECTION *sc)
 
     /* else limit |split_send_fragment| to current |max_send_fragment| */
     if (sc->split_send_fragment > sc->max_send_fragment)
-        return sc->max_send_fragment;
+        return (unsigned int)sc->max_send_fragment;
 
     /* return current SSL connection setting */
-    return sc->split_send_fragment;
+    return (unsigned int)sc->split_send_fragment;
 }
 
 int SSL_stateless(SSL *s)

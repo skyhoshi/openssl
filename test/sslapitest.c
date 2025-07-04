@@ -150,7 +150,7 @@ static int hostname_cb(SSL *s, int *al, void *arg)
 
 static void client_keylog_callback(const SSL *ssl, const char *line)
 {
-    int line_length = strlen(line);
+    int line_length = (int)strlen(line);
 
     /* If the log doesn't fit, error out. */
     if (client_log_buffer_index + line_length > sizeof(client_log_buffer) - 1) {
@@ -166,7 +166,7 @@ static void client_keylog_callback(const SSL *ssl, const char *line)
 
 static void server_keylog_callback(const SSL *ssl, const char *line)
 {
-    int line_length = strlen(line);
+    int line_length = (int)strlen(line);
 
     /* If the log doesn't fit, error out. */
     if (server_log_buffer_index + line_length > sizeof(server_log_buffer) - 1) {
@@ -394,8 +394,8 @@ static int test_keylog(void)
             || !TEST_true(create_ssl_connection(serverssl, clientssl,
                                                 SSL_ERROR_NONE))
             || !TEST_false(error_writing_log)
-            || !TEST_int_gt(client_log_buffer_index, 0)
-            || !TEST_int_gt(server_log_buffer_index, 0))
+            || !TEST_size_t_gt(client_log_buffer_index, 0)
+            || !TEST_size_t_gt(server_log_buffer_index, 0))
         goto end;
 
     /*
@@ -917,14 +917,14 @@ static int test_ccs_change_cipher(void)
     /* Actually drive the renegotiation. */
     for (i = 0; i < 3; i++) {
         if (SSL_read_ex(clientssl, &buf, sizeof(buf), &readbytes) > 0) {
-            if (!TEST_ulong_eq(readbytes, 0))
+            if (!TEST_size_t_eq(readbytes, 0))
                 goto end;
         } else if (!TEST_int_eq(SSL_get_error(clientssl, 0),
                                 SSL_ERROR_WANT_READ)) {
             goto end;
         }
         if (SSL_read_ex(serverssl, &buf, sizeof(buf), &readbytes) > 0) {
-            if (!TEST_ulong_eq(readbytes, 0))
+            if (!TEST_size_t_eq(readbytes, 0))
                 goto end;
         } else if (!TEST_int_eq(SSL_get_error(serverssl, 0),
                                 SSL_ERROR_WANT_READ)) {
@@ -1780,7 +1780,7 @@ static int execute_cleanse_plaintext(const SSL_METHOD *smeth,
     rr = serversc->rlayer.tlsrecs;
 
     zbuf = &rr->data[rr->off];
-    if (!TEST_int_eq(rr->length, sizeof(cbuf)))
+    if (!TEST_size_t_eq(rr->length, sizeof(cbuf)))
         goto end;
 
     /*
@@ -2768,7 +2768,7 @@ static int test_extra_tickets(int idx)
             || !TEST_int_eq(idx * 2 + 2, new_called)
             || !TEST_true(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes))
             || !TEST_int_eq(idx * 2 + 4, new_called)
-            || !TEST_int_eq(sizeof(buf), nbytes)
+            || !TEST_size_t_eq(sizeof(buf), nbytes)
             || !TEST_int_eq(c, buf[0])
             || !TEST_false(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes)))
         goto end;
@@ -2845,7 +2845,7 @@ static int test_extra_tickets(int idx)
             || !TEST_int_eq(0, new_called)
             || !TEST_true(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes))
             || !TEST_int_eq(0, new_called)
-            || !TEST_int_eq(sizeof(buf), nbytes)
+            || !TEST_size_t_eq(sizeof(buf), nbytes)
             || !TEST_int_eq(c, buf[0])
             || !TEST_false(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes)))
         goto end;
@@ -2860,7 +2860,7 @@ static int test_extra_tickets(int idx)
             || !TEST_int_eq(2, new_called)
             || !TEST_true(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes))
             || !TEST_int_eq(4, new_called)
-            || !TEST_int_eq(sizeof(buf), nbytes)
+            || !TEST_size_t_eq(sizeof(buf), nbytes)
             || !TEST_int_eq(c, buf[0])
             || !TEST_false(SSL_read_ex(clientssl, buf, sizeof(buf), &nbytes)))
         goto end;
@@ -3204,7 +3204,7 @@ static int test_set_sigalgs(int idx)
         int ret;
 
         if (curr->list != NULL)
-            ret = SSL_CTX_set1_sigalgs(cctx, curr->list, curr->listlen);
+            ret = SSL_CTX_set1_sigalgs(cctx, curr->list, (long)curr->listlen);
         else
             ret = SSL_CTX_set1_sigalgs_list(cctx, curr->liststr);
 
@@ -3229,7 +3229,7 @@ static int test_set_sigalgs(int idx)
         int ret;
 
         if (curr->list != NULL)
-            ret = SSL_set1_sigalgs(clientssl, curr->list, curr->listlen);
+            ret = SSL_set1_sigalgs(clientssl, curr->list, (long)curr->listlen);
         else
             ret = SSL_set1_sigalgs_list(clientssl, curr->liststr);
         if (!ret) {
@@ -3301,7 +3301,7 @@ static unsigned int psk_client_cb(SSL *ssl, const char *hint, char *id,
                                   unsigned char *psk,
                                   unsigned int max_psk_len)
 {
-    unsigned int psklen = 0;
+    size_t psklen = 0;
 
     psk_client_cb_cnt++;
 
@@ -3321,7 +3321,7 @@ static unsigned int psk_client_cb(SSL *ssl, const char *hint, char *id,
     psklen = SSL_SESSION_get_master_key(clientpsk, psk, max_psk_len);
     strncpy(id, pskid, max_id_len);
 
-    return psklen;
+    return (unsigned int)psklen;
 }
 #endif /* OPENSSL_NO_PSK */
 
@@ -3357,7 +3357,7 @@ static int find_session_cb(SSL *ssl, const unsigned char *identity,
 static unsigned int psk_server_cb(SSL *ssl, const char *identity,
                                   unsigned char *psk, unsigned int max_psk_len)
 {
-    unsigned int psklen = 0;
+    size_t psklen = 0;
 
     psk_server_cb_cnt++;
 
@@ -3378,7 +3378,7 @@ static unsigned int psk_server_cb(SSL *ssl, const char *identity,
         return 0;
     psklen = SSL_SESSION_get_master_key(serverpsk, psk, max_psk_len);
 
-    return psklen;
+    return (unsigned int)psklen;
 }
 #endif /* OPENSSL_NO_PSK */
 
@@ -5979,7 +5979,7 @@ static int generate_stateless_cookie_callback(SSL *ssl, unsigned char *cookie,
 static int verify_stateless_cookie_callback(SSL *ssl, const unsigned char *cookie,
                                       size_t cookie_len)
 {
-    return verify_cookie_callback(ssl, cookie, cookie_len);
+    return verify_cookie_callback(ssl, cookie, (unsigned int)cookie_len);
 }
 
 static int test_stateless(void)
@@ -6861,14 +6861,14 @@ static int test_key_update(void)
         }
 
         /* Check that sending and receiving app data is ok */
-        if (!TEST_int_eq(SSL_write(clientssl, mess, strlen(mess)), strlen(mess))
+        if (!TEST_int_eq(SSL_write(clientssl, mess, (int)strlen(mess)), (int)strlen(mess))
                 || !TEST_int_eq(SSL_read(serverssl, buf, sizeof(buf)),
-                                         strlen(mess)))
+                                         (int)strlen(mess)))
             goto end;
 
-        if (!TEST_int_eq(SSL_write(serverssl, mess, strlen(mess)), strlen(mess))
+        if (!TEST_int_eq(SSL_write(serverssl, mess, (int)strlen(mess)), (int)strlen(mess))
                 || !TEST_int_eq(SSL_read(clientssl, buf, sizeof(buf)),
-                                         strlen(mess)))
+                                         (int)strlen(mess)))
             goto end;
     }
 
@@ -6929,7 +6929,7 @@ static int test_key_update_peer_in_write(int tst)
     bretry = NULL;
 
     /* Write data that we know will fail with SSL_ERROR_WANT_WRITE */
-    if (!TEST_int_eq(SSL_write(peerwrite, mess, strlen(mess)), -1)
+    if (!TEST_int_eq(SSL_write(peerwrite, mess, (int)strlen(mess)), -1)
             || !TEST_int_eq(SSL_get_error(peerwrite, 0), SSL_ERROR_WANT_WRITE)
             || !TEST_true(SSL_want_write(peerwrite))
             || !TEST_true(SSL_net_write_desired(peerwrite)))
@@ -6950,13 +6950,13 @@ static int test_key_update_peer_in_write(int tst)
      * Complete the write we started previously and read it from the other
      * endpoint
      */
-    if (!TEST_int_eq(SSL_write(peerwrite, mess, strlen(mess)), strlen(mess))
-            || !TEST_int_eq(SSL_read(peerupdate, buf, sizeof(buf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(peerwrite, mess, (int)strlen(mess)), (int)strlen(mess))
+            || !TEST_int_eq(SSL_read(peerupdate, buf, sizeof(buf)), (int)strlen(mess)))
         goto end;
 
     /* Write more data to ensure we send the KeyUpdate message back */
-    if (!TEST_int_eq(SSL_write(peerwrite, mess, strlen(mess)), strlen(mess))
-            || !TEST_int_eq(SSL_read(peerupdate, buf, sizeof(buf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(peerwrite, mess, (int)strlen(mess)), (int)strlen(mess))
+            || !TEST_int_eq(SSL_read(peerupdate, buf, sizeof(buf)), (int)strlen(mess)))
         goto end;
 
     if (!TEST_false(SSL_net_read_desired(peerwrite))
@@ -7034,7 +7034,7 @@ static int test_key_update_peer_in_read(int tst)
         goto end;
 
     /* Now write some data in peer - we will write the key update */
-    if (!TEST_int_eq(SSL_write(peer, mess, strlen(mess)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(peer, mess, (int)strlen(mess)), (int)strlen(mess)))
         goto end;
 
     /*
@@ -7046,8 +7046,8 @@ static int test_key_update_peer_in_read(int tst)
         goto end;
 
     /* check that sending and receiving appdata ok */
-    if (!TEST_int_eq(SSL_write(local, mess, strlen(mess)), strlen(mess))
-            || !TEST_int_eq(SSL_read(peer, prbuf, sizeof(prbuf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(local, mess, (int)strlen(mess)), (int)strlen(mess))
+            || !TEST_int_eq(SSL_read(peer, prbuf, sizeof(prbuf)), (int)strlen(mess)))
         goto end;
 
     testresult = 1;
@@ -7103,7 +7103,7 @@ static int test_key_update_local_in_write(int tst)
     bretry = NULL;
 
     /* write data in local will fail with SSL_ERROR_WANT_WRITE */
-    if (!TEST_int_eq(SSL_write(local, mess, strlen(mess)), -1)
+    if (!TEST_int_eq(SSL_write(local, mess, (int)strlen(mess)), -1)
             || !TEST_int_eq(SSL_get_error(local, -1), SSL_ERROR_WANT_WRITE))
         goto end;
 
@@ -7118,7 +7118,7 @@ static int test_key_update_local_in_write(int tst)
 
     ERR_clear_error();
     /* write data in local previously that we will complete */
-    if (!TEST_int_eq(SSL_write(local, mess, strlen(mess)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(local, mess, (int)strlen(mess)), (int)strlen(mess)))
         goto end;
 
     /* SSL_key_update will succeed because there is no pending write data */
@@ -7130,13 +7130,13 @@ static int test_key_update_local_in_write(int tst)
      * we write some appdata in local
      * read data in peer - we will read the keyupdate msg
      */
-    if (!TEST_int_eq(SSL_write(local, mess, strlen(mess)), strlen(mess))
-        || !TEST_int_eq(SSL_read(peer, buf, sizeof(buf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(local, mess, (int)strlen(mess)), (int)strlen(mess))
+        || !TEST_int_eq(SSL_read(peer, buf, sizeof(buf)), (int)strlen(mess)))
         goto end;
 
     /* Write more peer more data to ensure we send the keyupdate message back */
-    if (!TEST_int_eq(SSL_write(peer, mess, strlen(mess)), strlen(mess))
-            || !TEST_int_eq(SSL_read(local, buf, sizeof(buf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(peer, mess, (int)strlen(mess)), (int)strlen(mess))
+            || !TEST_int_eq(SSL_read(local, buf, sizeof(buf)), (int)strlen(mess)))
         goto end;
 
     testresult = 1;
@@ -7215,13 +7215,13 @@ static int test_key_update_local_in_read(int tst)
      * write data in local
      * read data in peer - we will read the key update
      */
-    if (!TEST_int_eq(SSL_write(local, mess, strlen(mess)), strlen(mess))
-        || !TEST_int_eq(SSL_read(peer, prbuf, sizeof(prbuf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(local, mess, (int)strlen(mess)), (int)strlen(mess))
+        || !TEST_int_eq(SSL_read(peer, prbuf, sizeof(prbuf)), (int)strlen(mess)))
         goto end;
 
   /* Write more peer data to ensure we send the keyupdate message back */
-    if (!TEST_int_eq(SSL_write(peer, mess, strlen(mess)), strlen(mess))
-            || !TEST_int_eq(SSL_read(local, lrbuf, sizeof(lrbuf)), strlen(mess)))
+    if (!TEST_int_eq(SSL_write(peer, mess, (int)strlen(mess)), (int)strlen(mess))
+            || !TEST_int_eq(SSL_read(local, lrbuf, sizeof(lrbuf)), (int)strlen(mess)))
         goto end;
 
     testresult = 1;
@@ -7390,7 +7390,7 @@ static int get_MFL_from_client_hello(BIO *bio, int *mfl_codemfl_code)
             goto end;
 
         if (type == TLSEXT_TYPE_max_fragment_length) {
-            if (!TEST_uint_ne(PACKET_remaining(&pkt3), 0)
+            if (!TEST_size_t_ne(PACKET_remaining(&pkt3), 0)
                     || !TEST_true(PACKET_get_1(&pkt3, &MFL_code)))
                 goto end;
 
@@ -11500,12 +11500,12 @@ static int test_pipelining(int idx)
 {
     SSL_CTX *cctx = NULL, *sctx = NULL;
     SSL *clientssl = NULL, *serverssl = NULL, *peera, *peerb;
-    int testresult = 0, numreads;
+    int testresult = 0, numreads, numpipes = 5;
     /* A 55 byte message */
     unsigned char *msg = (unsigned char *)
         "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz123";
-    size_t written, readbytes, offset, msglen, fragsize = 10, numpipes = 5;
-    size_t expectedreads;
+    size_t written, readbytes, offset, msglen, fragsize = 10;
+    int expectedreads;
     unsigned char *buf = NULL;
     ENGINE *e = NULL;
 
@@ -11575,7 +11575,7 @@ static int test_pipelining(int idx)
          * Test that setting a split send fragment longer than the maximum
          * allowed fails
          */
-        if (!TEST_false(SSL_set_split_send_fragment(peera, fragsize + 1)))
+        if (!TEST_false(SSL_set_split_send_fragment(peera, (long)(fragsize + 1))))
             goto end;
     }
 
@@ -11585,7 +11585,7 @@ static int test_pipelining(int idx)
      * but sufficient for our purposes
      */
     if (!TEST_true(SSL_set_max_pipelines(peera, numpipes))
-            || !TEST_true(SSL_set_split_send_fragment(peera, fragsize)))
+            || !TEST_true(SSL_set_split_send_fragment(peera, (long)fragsize)))
         goto end;
 
     if (!TEST_true(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
@@ -12636,6 +12636,7 @@ struct quic_tls_test_data {
     int alert;
     int err;
     int forcefail;
+    int sm_count;
 };
 
 static int clientquicdata = 0xff, serverquicdata = 0xfe;
@@ -12723,6 +12724,94 @@ static int crypto_release_rcd_cb(SSL *s, size_t bytes_read, void *arg)
     return 1;
 }
 
+struct secret_yield_entry {
+    uint8_t recorded;
+    int prot_level;
+    int direction;
+    int sm_generation;
+    SSL *ssl;
+};
+
+static struct secret_yield_entry secret_history[16];
+static int secret_history_idx = 0;
+/*
+ * Note, this enum needs to match the direction values passed
+ * to yield_secret_cb
+ */
+typedef enum {
+    LAST_DIR_READ = 0,
+    LAST_DIR_WRITE = 1,
+    LAST_DIR_UNSET = 2
+} last_dir_history_state;
+
+static int check_secret_history(SSL *s)
+{
+    int i;
+    int ret = 0;
+    last_dir_history_state last_state = LAST_DIR_UNSET;
+    int last_prot_level = 0;
+    int last_generation = 0;
+
+    TEST_info("Checking history for %p\n", (void *)s);
+    for (i = 0; secret_history[i].recorded == 1; i++) {
+        if (secret_history[i].ssl != s)
+            continue;
+        TEST_info("Got %s(%d) secret for level %d, last level %d, last state %d, gen %d\n",
+                  secret_history[i].direction == 1 ? "Write" : "Read", secret_history[i].direction,
+                  secret_history[i].prot_level, last_prot_level, last_state,
+                  secret_history[i].sm_generation);
+
+        if (last_state == LAST_DIR_UNSET) {
+            last_prot_level = secret_history[i].prot_level;
+            last_state = secret_history[i].direction;
+            last_generation = secret_history[i].sm_generation;
+            continue;
+        }
+
+        switch(secret_history[i].direction) {
+        case 1:
+            /*
+             * write case
+             * NOTE: There is an odd corner case here.  It may occur that
+             * in a single iteration of the state machine, the read key is yielded
+             * prior to the write key for the same level.  This is undesireable
+             * for quic, but it is ok, as the general implementation of every 3rd
+             * party quic stack while prefering write keys before read, allows
+             * for read before write if both keys are yielded in the same call
+             * to SSL_do_handshake, as the tls adaptation code for that quic stack
+             * can then cache keys until both are available, so we allow read before
+             * write here iff they occur in the same iteration of SSL_do_handshake
+             * as represented by the recorded sm_generation value.
+             */
+            if (last_prot_level == secret_history[i].prot_level
+                && last_state == LAST_DIR_READ) {
+                if (last_generation == secret_history[i].sm_generation) {
+                    TEST_info("Read before write key in same SSL state machine iteration is ok");
+                } else {
+                    TEST_error("Got read key before write key");
+                    goto end;
+                }
+            }
+            /* FALLTHROUGH */
+        case 0:
+            /*
+             * Read case
+             */
+            break;
+        default:
+            TEST_error("Unknown direction");
+            goto end;
+        }
+        last_prot_level = secret_history[i].prot_level;
+        last_state = secret_history[i].direction;
+        last_generation = secret_history[i].sm_generation;
+    }
+
+    ret = 1;
+end:
+    return ret;
+}
+
 static int yield_secret_cb(SSL *s, uint32_t prot_level, int direction,
                            const unsigned char *secret, size_t secret_len,
                            void *arg)
@@ -12757,9 +12846,31 @@ static int yield_secret_cb(SSL *s, uint32_t prot_level, int direction,
         goto err;
     }
 
+    secret_history[secret_history_idx].direction = direction;
+    secret_history[secret_history_idx].prot_level = (int)prot_level;
+    secret_history[secret_history_idx].recorded = 1;
+    secret_history[secret_history_idx].ssl = s;
+    secret_history[secret_history_idx].sm_generation = data->sm_count;
+    secret_history_idx++;
     return 1;
  err:
     data->err = 1;
+    return 0;
+}
+
+static int yield_secret_cb_fail(SSL *s, uint32_t prot_level, int direction,
+                                const unsigned char *secret, size_t secret_len,
+                                void *arg)
+{
+    (void)s;
+    (void)prot_level;
+    (void)direction;
+    (void)secret;
+    (void)secret_len;
+    (void)arg;
+    /*
+     * This callback is to test double free in quic tls
+     */
     return 0;
 }
 
@@ -12803,13 +12914,15 @@ static int alert_cb(SSL *s, unsigned char alert_code, void *arg)
  * Test 0: Normal run
  * Test 1: Force a failure
  * Test 3: Use a CCM based ciphersuite
+ * Test 4: fail yield_secret_cb to see double free
+ * Test 5: Normal run with SNI
  */
 static int test_quic_tls(int idx)
 {
-    SSL_CTX *sctx = NULL, *cctx = NULL;
+    SSL_CTX *sctx = NULL, *sctx2 = NULL, *cctx = NULL;
     SSL *serverssl = NULL, *clientssl = NULL;
     int testresult = 0;
-    const OSSL_DISPATCH qtdis[] = {
+    OSSL_DISPATCH qtdis[] = {
         {OSSL_FUNC_SSL_QUIC_TLS_CRYPTO_SEND, (void (*)(void))crypto_send_cb},
         {OSSL_FUNC_SSL_QUIC_TLS_CRYPTO_RECV_RCD,
          (void (*)(void))crypto_recv_rcd_cb},
@@ -12831,6 +12944,12 @@ static int test_quic_tls(int idx)
     };
     int i;
 
+    if (idx == 4)
+        qtdis[3].function = (void (*)(void))yield_secret_cb_fail;
+
+    snicb = 0;
+    memset(secret_history, 0, sizeof(secret_history));
+    secret_history_idx = 0;
     memset(&sdata, 0, sizeof(sdata));
     memset(&cdata, 0, sizeof(cdata));
     sdata.peer = &cdata;
@@ -12842,6 +12961,18 @@ static int test_quic_tls(int idx)
                                        TLS_client_method(), TLS1_3_VERSION, 0,
                                        &sctx, &cctx, cert, privkey)))
         goto end;
+
+    if (idx == 5) {
+        if (!TEST_true(create_ssl_ctx_pair(libctx, TLS_server_method(), NULL,
+                                           TLS1_3_VERSION, 0,
+                                           &sctx2, NULL, cert, privkey)))
+            goto end;
+
+        /* Set up SNI */
+        if (!TEST_true(SSL_CTX_set_tlsext_servername_callback(sctx, sni_cb))
+                || !TEST_true(SSL_CTX_set_tlsext_servername_arg(sctx, sctx2)))
+            goto end;
+    }
 
     if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl, NULL,
                                       NULL)))
@@ -12869,16 +13000,24 @@ static int test_quic_tls(int idx)
                                                             sizeof(sparams))))
         goto end;
 
-    if (idx != 1) {
-        if (!TEST_true(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
+    if (idx != 1 && idx != 4) {
+        if (!TEST_true(create_ssl_connection_ex(serverssl, clientssl, SSL_ERROR_NONE,
+                                                &cdata.sm_count, &sdata.sm_count)))
             goto end;
     } else {
         /* We expect this connection to fail */
-        if (!TEST_false(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
+        if (!TEST_false(create_ssl_connection_ex(serverssl, clientssl, SSL_ERROR_NONE,
+                                                 &cdata.sm_count, &sdata.sm_count)))
             goto end;
         testresult = 1;
         sdata.err = 0;
         goto end;
+    }
+
+    /* We should have had the SNI callback called exactly once */
+    if (idx == 5) {
+        if (!TEST_int_eq(snicb, 1))
+            goto end;
     }
 
     /* Check no problems during the handshake */
@@ -12897,6 +13036,14 @@ static int test_quic_tls(int idx)
             goto end;
     }
 
+    /*
+     * Check that our secret history yields write secrets before read secrets
+     */
+    if (!TEST_int_eq(check_secret_history(serverssl), 1))
+        goto end;
+    if (!TEST_int_eq(check_secret_history(clientssl), 1))
+        goto end;
+
     /* Check the transport params */
     if (!TEST_mem_eq(sdata.params, sdata.params_len, cparams, sizeof(cparams))
             || !TEST_mem_eq(cdata.params, cdata.params_len, sparams,
@@ -12914,6 +13061,7 @@ static int test_quic_tls(int idx)
  end:
     SSL_free(serverssl);
     SSL_free(clientssl);
+    SSL_CTX_free(sctx2);
     SSL_CTX_free(sctx);
     SSL_CTX_free(cctx);
 
@@ -12961,6 +13109,8 @@ static int test_quic_tls_early_data(void)
     };
     int i;
 
+    memset(secret_history, 0, sizeof(secret_history));
+    secret_history_idx = 0;
     memset(&sdata, 0, sizeof(sdata));
     memset(&cdata, 0, sizeof(cdata));
     sdata.peer = &cdata;
@@ -13010,6 +13160,12 @@ static int test_quic_tls_early_data(void)
                                                             sizeof(sparams))))
         goto end;
 
+    /*
+     * Reset our secret history so we get the record of the second connection
+     */
+    memset(secret_history, 0, sizeof(secret_history));
+    secret_history_idx = 0;
+
     SSL_set_quic_tls_early_data_enabled(serverssl, 1);
     SSL_set_quic_tls_early_data_enabled(clientssl, 1);
 
@@ -13030,7 +13186,10 @@ static int test_quic_tls_early_data(void)
             || !TEST_true(cdata.wenc_level == OSSL_RECORD_PROTECTION_LEVEL_EARLY))
         goto end;
 
-    if (!TEST_true(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
+    sdata.sm_count = 0;
+    cdata.sm_count = 0;
+    if (!TEST_true(create_ssl_connection_ex(serverssl, clientssl, SSL_ERROR_NONE,
+                                            &cdata.sm_count, &sdata.sm_count)))
         goto end;
 
     /* Check no problems during the handshake */
@@ -13048,6 +13207,11 @@ static int test_quic_tls_early_data(void)
                          cdata.rsecret[i], cdata.rsecret_len[i]))
             goto end;
     }
+
+    if (!TEST_int_eq(check_secret_history(serverssl), 1))
+        goto end;
+    if (!TEST_int_eq(check_secret_history(clientssl), 1))
+        goto end;
 
     /* Check the transport params */
     if (!TEST_mem_eq(sdata.params, sdata.params_len, cparams, sizeof(cparams))
@@ -13080,6 +13244,79 @@ static int test_quic_tls_early_data(void)
     return testresult;
 }
 #endif /* !defined(OSSL_NO_USABLE_TLS1_3) */
+
+static int test_no_renegotiation(int idx)
+{
+    SSL_CTX *sctx = NULL, *cctx = NULL;
+    SSL *serverssl = NULL, *clientssl = NULL;
+    int testresult = 0, ret;
+    int max_proto;
+    const SSL_METHOD *sm, *cm;
+    unsigned char buf[5];
+
+    if (idx == 0) {
+#ifndef OPENSSL_NO_TLS1_2
+        max_proto = TLS1_2_VERSION;
+        sm = TLS_server_method();
+        cm = TLS_client_method();
+#else
+        return TEST_skip("TLSv1.2 is disabled in this build");
+#endif
+    } else {
+#ifndef OPENSSL_NO_DTLS1_2
+        max_proto = DTLS1_2_VERSION;
+        sm = DTLS_server_method();
+        cm = DTLS_client_method();
+#else
+        return TEST_skip("DTLSv1.2 is disabled in this build");
+#endif
+    }
+    if (!TEST_true(create_ssl_ctx_pair(libctx, sm, cm, 0, max_proto,
+                                       &sctx, &cctx, cert, privkey)))
+        goto end;
+
+    SSL_CTX_set_options(sctx, SSL_OP_NO_RENEGOTIATION);
+
+    if (!TEST_true(create_ssl_objects(sctx, cctx, &serverssl, &clientssl, NULL,
+                                      NULL)))
+        goto end;
+
+    if (!TEST_true(create_ssl_connection(serverssl, clientssl, SSL_ERROR_NONE)))
+        goto end;
+
+    if (!TEST_true(SSL_renegotiate(clientssl))
+            || !TEST_int_le(ret = SSL_connect(clientssl), 0)
+            || !TEST_int_eq(SSL_get_error(clientssl, ret), SSL_ERROR_WANT_READ))
+        goto end;
+
+    /*
+     * We've not sent any application data, so we expect this to fail. It should
+     * also read the renegotiation attempt, and send back a no_renegotiation
+     * warning alert because we have renegotiation disabled.
+     */
+    if (!TEST_int_le(ret = SSL_read(serverssl, buf, sizeof(buf)), 0))
+        goto end;
+    if (!TEST_int_eq(SSL_get_error(serverssl, ret), SSL_ERROR_WANT_READ))
+        goto end;
+
+    /*
+     * The client should now see the no_renegotiation warning and fail the
+     * connection
+     */
+    if (!TEST_int_le(ret = SSL_connect(clientssl), 0)
+            || !TEST_int_eq(SSL_get_error(clientssl, ret), SSL_ERROR_SSL)
+            || !TEST_int_eq(ERR_GET_REASON(ERR_get_error()), SSL_R_NO_RENEGOTIATION))
+        goto end;
+
+    testresult = 1;
+ end:
+    SSL_free(serverssl);
+    SSL_free(clientssl);
+    SSL_CTX_free(sctx);
+    SSL_CTX_free(cctx);
+
+    return testresult;
+}
 
 OPT_TEST_DECLARE_USAGE("certfile privkeyfile srpvfile tmpfile provider config dhfile\n")
 
@@ -13409,9 +13646,10 @@ int setup_tests(void)
 #endif
     ADD_ALL_TESTS(test_alpn, 4);
 #if !defined(OSSL_NO_USABLE_TLS1_3)
-    ADD_ALL_TESTS(test_quic_tls, 3);
+    ADD_ALL_TESTS(test_quic_tls, 6);
     ADD_TEST(test_quic_tls_early_data);
 #endif
+    ADD_ALL_TESTS(test_no_renegotiation, 2);
     return 1;
 
  err:

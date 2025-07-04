@@ -159,14 +159,14 @@ static int ossl_early_data_count_ok(SSL_CONNECTION *s, size_t length,
     }
 
     /* If we are dealing with ciphertext we need to allow for the overhead */
-    max_early_data += overhead;
+    max_early_data += (uint32_t)overhead;
 
     if (s->early_data_count + length > max_early_data) {
         SSLfatal(s, send ? SSL_AD_INTERNAL_ERROR : SSL_AD_UNEXPECTED_MESSAGE,
                  SSL_R_TOO_MUCH_EARLY_DATA);
         return 0;
     }
-    s->early_data_count += length;
+    s->early_data_count += (uint32_t)length;
 
     return 1;
 }
@@ -925,10 +925,10 @@ int ssl3_read_bytes(SSL *ssl, uint8_t type, uint8_t *recvd_type,
             /*
              * This is a warning but we receive it if we requested
              * renegotiation and the peer denied it. Terminate with a fatal
-             * alert because if application tried to renegotiate it
+             * alert because if the application tried to renegotiate it
              * presumably had a good reason and expects it to succeed. In
-             * future we might have a renegotiation where we don't care if
-             * the peer refused it where we carry on.
+             * the future we might have a renegotiation where we don't care
+             * if the peer refused it where we carry on.
              */
             SSLfatal(s, SSL_AD_HANDSHAKE_FAILURE, SSL_R_NO_RENEGOTIATION);
             return -1;
